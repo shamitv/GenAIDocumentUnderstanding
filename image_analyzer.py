@@ -120,7 +120,7 @@ def main():
     # 3. Convert image to data URL
     try:
         data_url = image_to_data_url(absolute_image_path)
-        logging.info(f"Successfully converted image to data URL (first 7 chars): {data_url[:7]}...") # Replaced print
+        logging.info(f"Successfully converted image to data URL (first few chars): {data_url[:25]}...") # Replaced print
     except Exception as e:
         logging.error(f"Error converting image to data URL: {e}") # Replaced print
         return

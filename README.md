@@ -2,6 +2,36 @@
 
 This project demonstrates how to use OpenAI's API to analyze images and answer questions based on their content.
 
+
+
+**Test Image (`data/test_images/data_table.png`):**
+
+![Test Data Table](data/test_images/data_table.png)
+
+**Sample Question:**
+
+"Based on the image, what is the Operating Profit for 2023'?"
+
+**Answer**
+
+The Operating Profit for 2023 is HK$ 4,547,486 thousand.
+
+**Sample Log Output:**
+
+```
+22025-05-23 13:40:20,328 - INFO - Using image: data/test_images/data_table.png
+2025-05-23 13:40:20,330 - INFO - Successfully converted image to data URL (first few chars): data:image/png;base64,iVB...
+2025-05-23 13:40:20,330 - INFO - Asking OpenAI the question: 'Based on the image, what is the Operating Profit for 2023'?' using the image 'data/test_images/data_table.png'
+2025-05-23 13:40:24,520 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-05-23 13:40:24,523 - INFO - OpenAI's Analysis:
+2025-05-23 13:40:24,523 - INFO - The table shows Operating Profit for 2023 at HK$ 4,547,486 (’000), i.e. approximately HK$ 4.55 billion.
+```
+
+## Logging
+
+The script uses the `logging` module to output information about its execution. By default, logs are printed to the console.
+
+
 ## Flow
 
 1.  **Load Environment Variables**: The script loads necessary environment variables, including the OpenAI API key, from a `.env` file.
@@ -46,30 +76,3 @@ python image_analyzer.py
 ## Example
 
 The script includes a test image located at `data/test_images/data_table.png`.
-
-**Test Image (`data/test_images/data_table.png`):**
-
-![Test Data Table](data/test_images/data_table.png)
-
-**Sample Question:**
-
-"Based on the image, what is the Operating Profit for 2023'?"
-
-**Answer**
-
-The Operating Profit for 2023 is HK$ 4,547,486 thousand.
-
-**Sample Log Output:**
-
-```
-2025-05-23 13:34:03,982 - INFO - Using image: /Volumes/work_ext/work/GenAIDocumentUnderstanding/data/test_images/data_table.png
-2025-05-23 13:34:03,984 - INFO - Successfully converted image to data URL (first 7 chars): data:im...
-2025-05-23 13:34:03,984 - INFO - Asking OpenAI the question: 'Based on the image, what is the Operating Profit for 2023'?' using the image 'data/test_images/data_table.png'
-2025-05-23 13:34:09,313 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-2025-05-23 13:34:09,316 - INFO - OpenAI's Analysis:
-2025-05-23 13:34:09,316 - INFO - The Operating Profit for 2023 is HK$ 4,547,486 thousand.
-```
-
-## Logging
-
-The script uses the `logging` module to output information about its execution. By default, logs are printed to the console.
