@@ -35,7 +35,7 @@ The script uses the `logging` module to output information about its execution. 
 ## Flow
 
 1.  **Load Environment Variables**: The script loads necessary environment variables, including the OpenAI API key, from a `.env` file.
-2.  **Initialize OpenAI Client**: An OpenAI client is created using the loaded API key.
+2.  **Initialize OpenAI Client**: An OpenAI client is created using the loaded API key.  If `LOCAL_API_BASE` is set, the client will instead connect to the specified local endpoint using `api_key=None`.
 3.  **Image Processing**:
     *   The script takes an image file path as input.
     *   It determines the MIME type of the image.
