@@ -11,17 +11,20 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # 1. Load environment variables from .env file
 load_dotenv()
 
-# 2. Create OpenAI client
-# The client will automatically pick up OPENAI_API_KEY and OPENAI_API_BASE 
-# from environment variables if they are set by load_dotenv().
+# 2. Create OpenAI client (use local API if specified)
+local_api_base = os.getenv('LOCAL_API_BASE')
 try:
-    client = OpenAI()
-    # Check if the API key was loaded
-    if not client.api_key:
-        raise ValueError("OPENAI_API_KEY not found or is empty. Make sure it's set in your .env file or environment variables.")
+    if local_api_base:
+        logging.info(f"Using local OpenAI API base: {local_api_base}")
+        client = OpenAI(api_key="None", base_url=local_api_base)
+    else:
+        client = OpenAI()
+        # Check if the API key was loaded when not using local API
+        if not client.api_key:
+            raise ValueError("OPENAI_API_KEY not found or is empty. Make sure it's set in your .env file or environment variables.")
 except Exception as e:
-    logging.error(f"Error initializing OpenAI client: {e}") # Replaced print
-    client = None # Ensure client is None if initialization fails
+    logging.error(f"Error initializing OpenAI client: {e}")
+    client = None  # Ensure client is None if initialization fails
 
 def get_image_mime_type(image_path):
     """Guesses the MIME type of an image file."""
