@@ -18,9 +18,9 @@ This document outlines the steps to convert Hugging Face (HF) `safetensors` mode
 
 Ensure you have the conversion script and server binary in your project:
 ```bash
-# Example paths
-CONVERTER=~/proj/models/conversion/llama.cpp/convert_hf_to_gguf.py
-SERVER=~/proj/models/conversion/llama.cpp/build/bin/llama-server
+# Example paths (replace with your actual paths)
+CONVERTER=/path/to/convert_hf_to_gguf.py    # e.g., path to convert_hf_to_gguf.py script
+SERVER=/path/to/llama-server                # e.g., path to llama-server binary
 ```
 
 ---
@@ -33,9 +33,9 @@ Replace the `INPUT_MODEL_DIR` and `OUT_DIR` below with your actual model paths.
 
 ```bash
 # Convert HF safetensors to primary gguf
-~ $CONVERTER \
-  ~/proj/models/Qwen/Qwen2.5-VL-7B-Instruct \
-  --outfile ~/proj/models/Qwen/Qwen2.5-VL-7B-Instruct-f16.gguf \
+$CONVERTER \
+  /path/to/hf_model_dir \
+  --outfile /path/to/output/model-f16.gguf \
   --outtype f16
 ```
 
@@ -43,9 +43,9 @@ Replace the `INPUT_MODEL_DIR` and `OUT_DIR` below with your actual model paths.
 
 ```bash
 # Convert HF safetensors to memory-mapped projection gguf
-~ $CONVERTER \
-  ~/proj/models/Qwen/Qwen2.5-VL-7B-Instruct \
-  --outfile ~/proj/models/Qwen/Qwen2.5-VL-7B-Instruct--mmproj-f16.gguf \
+$CONVERTER \
+  /path/to/hf_model_dir \
+  --outfile /path/to/output/model-mmproj-f16.gguf \
   --outtype f16 \
   --mmproj
 ```
@@ -94,9 +94,9 @@ usage: convert_hf_to_gguf.py [-h] [--vocab-only] [--outfile OUTFILE] [--outtype 
 Start the `llama-server` with both the primary and MMProj files:
 
 ```bash
-~ $SERVER \
-  -m ~/proj/models/Qwen/Qwen2.5-VL-7B-Instruct-f16.gguf \
-  --mmproj ~/proj/models/Qwen/Qwen2.5-VL-7B-Instruct--mmproj-f16.gguf \
+$SERVER \
+  -m /path/to/output/model-f16.gguf \
+  --mmproj /path/to/output/model-mmproj-f16.gguf \
   --ctx-size 30000 \
   --jinja \
   --host "0.0.0.0" \

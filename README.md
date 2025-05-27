@@ -76,3 +76,7 @@ python image_analyzer.py
 ## Example
 
 The script includes a test image located at `data/test_images/data_table.png`.
+
+## Model Conversion and Serving
+
+For instructions on converting HF `safetensors` models to `gguf` (primary and MMProj) and serving with `llama-server`, see [MODEL_CREATION_AND_SERVING.md](MODEL_CREATION_AND_SERVING.md).
