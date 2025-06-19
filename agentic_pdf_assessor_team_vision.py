@@ -16,10 +16,13 @@ import sys
 from typing import List, Dict
 
 import fitz  # PyMuPDF
+from dotenv import load_dotenv
 
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+load_dotenv()
 
 # ────────────────────────────────────────────────────────────────────
 # 0 ▪ Helper: PDF → list[image_url-dict]
