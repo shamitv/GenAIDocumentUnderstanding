@@ -84,10 +84,7 @@ reporter = AssistantAgent(
 )
 
 # ---  User proxy: construct with legacy-compatible signature, then set prompt ---
-user = UserProxyAgent("user")
-user.update_system_message(
-    "You are the document owner.  Answer clarification questions briefly."
-)
+user = UserProxyAgent("user",description="Document owner who answers clarification questions briefly.")
 
 PARTICIPANTS = [planner, executor, reporter, user]
 
@@ -135,22 +132,19 @@ if __name__ == "__main__":
     pdf_file= None
 
     if len(sys.argv) < 3:
-        print("Usage: python agentic_pdf_assessor_team_vision.py <PDF> <objective>")
-        sys.exit(1)
-    else:
         print("Running agentic PDF assessor with default input…")
         pdf_file = pathlib.Path("data/test_pdfs/sample.pdf").expanduser()
         objective = ("WHO’s recommended daily limit for free "
                      "sugar intake and give at least two health "
                      "risks of excessive sugar consumption?")
+    else:
+        pdf_file = pathlib.Path(sys.argv[1]).expanduser()
+        objective = " ".join(sys.argv[2:])
 
 
-    pdf_file = pathlib.Path(sys.argv[1]).expanduser()
     if not pdf_file.is_file():
         print(f"PDF not found: {pdf_file}")
         sys.exit(1)
-
-    objective = " ".join(sys.argv[2:])
 
     print("\n=== Starting interactive assessment… ===\n")
     md_report = asyncio.run(assess_pdf(str(pdf_file), objective))
