@@ -1,3 +1,7 @@
 openai
 Pillow
 python-dotenv
+autogen-agentchat
+autogen-core
+autogen-ext[openai]
+pymupdf
