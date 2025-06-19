@@ -95,6 +95,37 @@ def pdf_to_init_messages(pdf_path: str, objective: str,
     log("Finished processing PDF")
     return [init_blob, *image_msgs]
 
+# ──────────────────────────────────────────────────────────────
+# Debugging helper – subclass of AssistantAgent
+# ──────────────────────────────────────────────────────────────
+
+class DebugAssistantAgent(AssistantAgent):
+    """AssistantAgent that prints a prompt preview before each LLM call.
+
+    Override `_before_llm` or drop in a `breakpoint()` for interactive
+    debugging.  Everything else delegates to the normal `AssistantAgent`
+    implementation, so behaviour is unchanged.
+    """
+
+    # central LLM entry‑point used internally by AssistantAgent -> ModelClient
+    async def _aask_llm(self, prompt: str, **kwargs):  # type: ignore[override]
+        self._before_llm(prompt)
+        return await super()._aask_llm(prompt, **kwargs)
+
+    def _ask_llm(self, prompt: str, **kwargs):  # type: ignore[override]
+        self._before_llm(prompt)
+        return super()._ask_llm(prompt, **kwargs)
+
+    # ------------------------------------------------------------------
+    # customise *here* – print, log, or set a breakpoint
+    # ------------------------------------------------------------------
+    def _before_llm(self, prompt: str):
+        preview = (prompt.replace("\n", " ")[:180] + "…") if len(prompt) > 180 else prompt
+        print(f"\n🛠️  {self.name} → LLM prompt preview:\n{preview}\n{'-'*60}")
+        # Uncomment next line to drop into pdb
+        breakpoint()
+
+
 
 # ────────────────────────────────────────────────────────────────
 # 1 ▪ model client (GPT-4o vision)
@@ -107,7 +138,7 @@ openai_client = ChatCompletionCache(MODEL_upstream, cache_store)
 # ────────────────────────────────────────────────────────────────
 # 2 ▪ agents
 # ────────────────────────────────────────────────────────────────
-planner = AssistantAgent(
+planner = DebugAssistantAgent(
     "planner",
     model_client=openai_client,
     system_message=(
@@ -119,7 +150,7 @@ planner = AssistantAgent(
     ),
 )
 
-executor = AssistantAgent(
+executor = DebugAssistantAgent(
     "executor",
     model_client=openai_client,
     system_message=(
@@ -129,7 +160,7 @@ executor = AssistantAgent(
     ),
 )
 
-reporter = AssistantAgent(
+reporter = DebugAssistantAgent(
     "reporter",
     model_client=openai_client,
     system_message=(
