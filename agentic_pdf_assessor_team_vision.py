@@ -27,6 +27,9 @@ from autogen_agentchat.messages import TextMessage, MultiModalMessage
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+from dotenv import load_dotenv
+
+load_dotenv(verbose=True)
 
 
 # ────────────────────────────────────────────────────────────────
@@ -65,7 +68,7 @@ def pdf_to_init_messages(pdf_path: str, objective: str,
 # ────────────────────────────────────────────────────────────────
 # 1 ▪ model client (GPT-4o vision)
 # ────────────────────────────────────────────────────────────────
-MODEL = OpenAIChatCompletionClient(model="gpt-4o")
+MODEL = OpenAIChatCompletionClient(model="gpt-4o-mini")
 
 
 # ────────────────────────────────────────────────────────────────
@@ -103,9 +106,19 @@ reporter = AssistantAgent(
     ),
 )
 
+def console_input(prompt: str, *_):
+    """
+    Custom input function for UserProxyAgent.
+    AutoGen passes the OTHER agent’s message in `prompt`.
+    We print it so the user sees the question, then wait for stdin.
+    """
+    print("\n🔵  QUESTION for you ➜", prompt.strip(), "\n")
+    return input("📝  Your reply: ")
+
 user = UserProxyAgent(
     "user",
     description="Document owner who answers clarification questions briefly.",
+    input_func=console_input,
 )
 
 TEAM_PARTICIPANTS = [planner, executor, reporter, user]
