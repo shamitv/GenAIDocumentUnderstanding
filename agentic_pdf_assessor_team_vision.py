@@ -100,31 +100,43 @@ def pdf_to_init_messages(pdf_path: str, objective: str,
 # ──────────────────────────────────────────────────────────────
 
 class DebugAssistantAgent(AssistantAgent):
-    """AssistantAgent that prints a prompt preview before each LLM call.
+    """AssistantAgent that lets you break *right before* the model is called.
 
-    Override `_before_llm` or drop in a `breakpoint()` for interactive
-    debugging.  Everything else delegates to the normal `AssistantAgent`
-    implementation, so behaviour is unchanged.
+    AutoGen ≥0.6 funnels *all* sync & async completions through the protected
+    `_chat()` method.  By overriding it we intercept **every** request — even
+    function‑calling branches — without touching the public API.
     """
 
-    # central LLM entry‑point used internally by AssistantAgent -> ModelClient
-    async def _aask_llm(self, prompt: str, **kwargs):  # type: ignore[override]
-        self._before_llm(prompt)
-        return await super()._aask_llm(prompt, **kwargs)
+    # single sync/async entry‑point used by AssistantAgent
+    async def _chat(self, messages, **kwargs):  # type: ignore[override]
+        # Pretty preview (first 180 chars of the user/system delta)
+        last_user = next((m for m in reversed(messages) if m["role"] != "tool"), {})
+        prompt_snip = (last_user.get("content", "")[:180] + "…")
+        print(f" 🛠️  {self.name} → about to call LLM. Prompt preview: {prompt_snip} {'-'*60}")
 
-    def _ask_llm(self, prompt: str, **kwargs):  # type: ignore[override]
-        self._before_llm(prompt)
-        return super()._ask_llm(prompt, **kwargs)
+        # Uncomment for interactive debugging
+        # breakpoint()
 
-    # ------------------------------------------------------------------
-    # customise *here* – print, log, or set a breakpoint
-    # ------------------------------------------------------------------
-    def _before_llm(self, prompt: str):
-        preview = (prompt.replace("\n", " ")[:180] + "…") if len(prompt) > 180 else prompt
-        print(f"\n🛠️  {self.name} → LLM prompt preview:\n{preview}\n{'-'*60}")
-        # Uncomment next line to drop into pdb
-        breakpoint()
+        return await super()._chat(messages, **kwargs)
 
+
+class DebugOpenAIChatCompletionClient(OpenAIChatCompletionClient):
+    """Wraps the real OpenAI client so you can set a breakpoint on *every* call.
+
+    This is the most reliable interception point because *all* AutoGen
+    assistants eventually call `create_chat_completion`.  We log/preview the
+    first user‑visible part of the messages list (trimmed) before delegating to
+    the superclass.  Place a `breakpoint()` for interactive debugging.
+    """
+
+    async def create_chat_completion(self, messages, *args, **kwargs):  # type: ignore[override]
+        # Extract a short preview from the last *non‑tool* message
+        last_msg = next((m for m in reversed(messages) if m.get("role") != "tool"), {})
+        snippet = (last_msg.get("content", "")[:200] + "…")
+        print(f"⚙️  LLM call — preview:{snippet}{'-'*60}")
+        # Uncomment for step‑through debugging
+        # breakpoint()
+        return await super().create_chat_completion(messages, *args, **kwargs)
 
 
 # ────────────────────────────────────────────────────────────────
