@@ -1,19 +1,29 @@
 #!/usr/bin/env python
 """
-Vision-PDF assessor (AutoGen 0.6.1)
+Vision‑enabled PDF assessor — AutoGen 0.6.1‑compatible
+=====================================================
+Run from a shell:
 
-CLI
-----
-python agentic_pdf_assessor_team_vision.py  <PDF_PATH>  "<objective>"
+    python agentic_pdf_assessor_team_vision.py <PDF_PATH> "<objective text>"
 
-What it does
-------------
-1.  Renders each PDF page to PNG with PyMuPDF.
-2.  Wraps every PNG in an `autogen_core.Image` → `MultiModalMessage`.
-3.  Creates a four-agent Round-Robin team
-        planner ▸ executor ▸ reporter ▸ user-proxy
-4.  Feeds the JSON “INIT” blob + images to the team via `team.run(task=…)`.
-5.  Prints the reporter’s markdown summary (with footnote citations).
+*   Renders each page of the PDF to a PNG image (via **PyMuPDF**).
+*   Embeds every PNG as a base‑64 data‑URL → `autogen_core.Image` → `MultiModalMessage`.
+*   Creates a four‑agent **Round‑Robin** team:
+        • **planner**   – breaks work into task objects, may ask the human user.
+        • **executor**  – inspects the page images and returns findings + citations.
+        • **reporter**  – compiles a Markdown report with numbered footnotes.
+        • **user**      – real human; only asked when the planner explicitly requests.
+*   Feeds the JSON blob + images to `team.run(task=…)` (required by 0.6 API).
+*   Prints the reporter’s Markdown summary when finished.
+
+Notes & API‑compliance (AutoGen 0.6.1)
+--------------------------------------
+* **No deprecated kwargs** — `allow_parallel`, `startup_task`, `human_input_mode`,
+  etc. were removed after 0.4; this script uses only parameters present in 0.6.1.
+* **Message objects** — initial prompt and every page image are concrete
+  `TextMessage` / `MultiModalMessage` instances (all subclass `BaseChatMessage`).
+* **User input** — we supply a custom `input_func` so the *actual* clarification
+  question is printed before the console waits for an answer.
 """
 
 from __future__ import annotations
@@ -23,7 +33,7 @@ from typing import List
 import fitz                                         # PyMuPDF
 
 from autogen_core import Image as AGImage
-from autogen_agentchat.messages import TextMessage, MultiModalMessage
+from autogen_agentchat.messages import TextMessage, MultiModalMessage, BaseChatMessage
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
@@ -102,8 +112,9 @@ planner = AssistantAgent(
     system_message=(
         "Output STRICT JSON only.  Produce an array of task objects "
         "(description, objective, instructions, success_criteria). "
-        "Add a task addressed to `user` whenever clarification is required. "
-        "When finished, create ONE task for `reporter` then reply DONE."
+        "If clarification is required, emit a task addressed to `user` with "
+        "the question in *instructions*.  When every task is complete, "
+        "create ONE task for `reporter` and reply DONE."
     ),
 )
 
@@ -111,9 +122,9 @@ executor = AssistantAgent(
     "executor",
     model_client=openai_client,
     system_message=(
-        "Execute ONE task using ONLY the provided PDF images. "
-        "Return JSON {result:str, citations:[{page:int, quote:str}]}. "
-        "Quotes ≤200 characters."
+        "Execute ONE task using ONLY the provided PDF page images. "
+        "Return JSON {result:str, citations:[{page:int, quote:str}]} "
+        "(quotes ≤200 chars)."
     ),
 )
 
@@ -128,13 +139,9 @@ reporter = AssistantAgent(
     ),
 )
 
-def console_input(prompt: str, *_):
-    """
-    Custom input function for UserProxyAgent.
-    AutoGen passes the OTHER agent’s message in `prompt`.
-    We print it so the user sees the question, then wait for stdin.
-    """
-    log(f"QUESTION for you ➜ {prompt.strip()}")
+def console_input(prompt: str):
+    shown = prompt.strip() or "<no prompt text provided>"
+    print(f"\n🔵  QUESTION for you ➜ {shown}\n")
     return input("📝  Your reply: ")
 
 user = UserProxyAgent(
@@ -143,23 +150,70 @@ user = UserProxyAgent(
     input_func=console_input,
 )
 
-TEAM_PARTICIPANTS = [planner, executor, reporter, user]
+user = UserProxyAgent(
+    "user",
+    description="Document owner who answers clarification questions briefly.",
+    input_func=console_input,
+)
+
+TEAM = [planner, executor, reporter, user]
+
+# ────────────────────────────────────────────────────────────────
+# 3 ▪ pretty‑print helper for plans
+# ────────────────────────────────────────────────────────────────
+
+def _print_plan(raw: str):
+    """Try to parse & pretty‑print a JSON array of task objects."""
+    try:
+        tasks = json.loads(raw)
+        if isinstance(tasks, list) and tasks and isinstance(tasks[0], dict):
+            print("\n📑  Current plan (", len(tasks), " tasks)\n" + "=" * 40)
+            for idx, t in enumerate(tasks, 1):
+                desc = t.get("description") or t.get("objective") or ""
+                print(f"{idx:>2}. {desc}")
+            print("=" * 40)
+    except Exception:
+        pass  # not a plan update
 
 
 # ────────────────────────────────────────────────────────────────
-# 3 ▪ run everything and fetch reporter’s summary
+# 4 ▪ orchestrator (streaming, with plan logging)
 # ────────────────────────────────────────────────────────────────
 async def assess_pdf(pdf_path: str, objective: str) -> str:
-    task_messages = pdf_to_init_messages(pdf_path, objective)
+    init_msgs = pdf_to_init_messages(pdf_path, objective)
 
-    team = RoundRobinGroupChat(
-        participants=TEAM_PARTICIPANTS,
-        max_turns=None,                 # planner stops via DONE
-    )
+    team = RoundRobinGroupChat(participants=TEAM, max_turns=None)
 
-    log("Running team…")
-    task_result = await team.run(task=task_messages)
-    return task_result.messages[-1].content   # reporter's markdown
+    reporter_markdown: str | None = None
+
+    async for event in team.run_stream(task=init_msgs):
+        if isinstance(event, BaseChatMessage):
+            # show every plan that comes from the planner
+            if event.source == "planner":
+                _print_plan(event.content or "")
+            # capture reporter's final summary
+            if event.source == "reporter":
+                reporter_markdown = event.content
+
+    if reporter_markdown is None:
+        raise RuntimeError("Reporter did not produce a summary.")
+    return reporter_markdown
+
+
+
+# ────────────────────────────────────────────────────────────────
+# 4 ▪ orchestrator
+# ────────────────────────────────────────────────────────────────
+async def assess_pdf(pdf_path: str, objective: str) -> str:
+    init_msgs = pdf_to_init_messages(pdf_path, objective)
+
+    team = RoundRobinGroupChat(participants=TEAM, max_turns=None)
+
+    # Provide the initial messages list via the `task=` param (0.6 API)
+    task_result = await team.run(task=init_msgs)
+
+    # Reporter’s markdown is the last message content
+    return task_result.messages[-1].content
 
 # ────────────────────────────────────────────────────────────────────
 # 5 · CLI / demo
