@@ -84,7 +84,7 @@ reporter = AssistantAgent(
 )
 
 # ---  User proxy: construct with legacy-compatible signature, then set prompt ---
-user = UserProxyAgent("user", human_input_mode="ALWAYS")
+user = UserProxyAgent("user")
 user.update_system_message(
     "You are the document owner.  Answer clarification questions briefly."
 )
