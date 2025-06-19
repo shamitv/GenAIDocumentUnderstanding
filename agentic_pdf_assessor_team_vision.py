@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Vision‑enabled PDF assessor — AutoGen 0.6.1‑compatible
+Vision‑enabled PDF assessor — AutoGen 0.6.1‑compatible
 =====================================================
 Run from a shell:
 
@@ -10,19 +10,19 @@ Run from a shell:
 *   Embeds every PNG as a base‑64 data‑URL → `autogen_core.Image` → `MultiModalMessage`.
 *   Creates a four‑agent **Round‑Robin** team:
         • **planner**   – breaks work into task objects, may ask the human user.
-        • **executor**  – inspects the page images and returns findings + citations.
+        • **executor**  – inspects the page images and returns findings + citations.
         • **reporter**  – compiles a Markdown report with numbered footnotes.
         • **user**      – real human; only asked when the planner explicitly requests.
-*   Feeds the JSON blob + images to `team.run(task=…)` (required by 0.6 API).
+*   Feeds the JSON blob + images to `team.run(task=…)` (required by 0.6 API).
 *   Prints the reporter’s Markdown summary when finished.
 
-Notes & API‑compliance (AutoGen 0.6.1)
+Notes & API‑compliance (AutoGen 0.6.1)
 --------------------------------------
-* **No deprecated kwargs** — `allow_parallel`, `startup_task`, `human_input_mode`,
-  etc. were removed after 0.4; this script uses only parameters present in 0.6.1.
-* **Message objects** — initial prompt and every page image are concrete
+* **No deprecated kwargs** — `allow_parallel`, `startup_task`, `human_input_mode`,
+  etc. were removed after 0.4; this script uses only parameters present in 0.6.1.
+* **Message objects** — initial prompt and every page image are concrete
   `TextMessage` / `MultiModalMessage` instances (all subclass `BaseChatMessage`).
-* **User input** — we supply a custom `input_func` so the *actual* clarification
+* **User input** — we supply a custom `input_func` so the *actual* clarification
   question is printed before the console waits for an answer.
 """
 
@@ -243,10 +243,10 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 3:
         log("Running agentic PDF assessor with default input…")
-        pdf_file = pathlib.Path("./data/test_pdfs/sugars-factsheet.pdf").expanduser()
-        objective = ("WHO’s recommended daily limit for free "
-                     "sugar intake and give at least two health "
-                     "risks of excessive sugar consumption?")
+        pdf_file = pathlib.Path("./data/test_pdfs/Intro_AutoGen.pdf").expanduser()
+        objective = ("What is this document about? "
+                     "Which patterns are discussed? "
+                     )
     else:
         pdf_file = pathlib.Path(sys.argv[1]).expanduser()
         objective = " ".join(sys.argv[2:])
