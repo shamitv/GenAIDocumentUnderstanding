@@ -27,6 +27,9 @@ from autogen_agentchat.messages import TextMessage, MultiModalMessage
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_ext.models.cache import ChatCompletionCache, CHAT_CACHE_VALUE_TYPE
+from autogen_ext.cache_store.diskcache import DiskCacheStore
+from diskcache import Cache
 from dotenv import load_dotenv
 
 load_dotenv(verbose=True)
@@ -68,7 +71,9 @@ def pdf_to_init_messages(pdf_path: str, objective: str,
 # ────────────────────────────────────────────────────────────────
 # 1 ▪ model client (GPT-4o vision)
 # ────────────────────────────────────────────────────────────────
-MODEL = OpenAIChatCompletionClient(model="gpt-4o-mini")
+MODEL_upstream = OpenAIChatCompletionClient(model="gpt-4o-mini")
+cache_store = DiskCacheStore[CHAT_CACHE_VALUE_TYPE](Cache(".autogen_cache"))
+openai_client = ChatCompletionCache(MODEL_upstream, cache_store)
 
 
 # ────────────────────────────────────────────────────────────────
@@ -76,7 +81,7 @@ MODEL = OpenAIChatCompletionClient(model="gpt-4o-mini")
 # ────────────────────────────────────────────────────────────────
 planner = AssistantAgent(
     "planner",
-    model_client=MODEL,
+    model_client=openai_client,
     system_message=(
         "Output STRICT JSON only.  Produce an array of task objects "
         "(description, objective, instructions, success_criteria). "
@@ -87,7 +92,7 @@ planner = AssistantAgent(
 
 executor = AssistantAgent(
     "executor",
-    model_client=MODEL,
+    model_client=openai_client,
     system_message=(
         "Execute ONE task using ONLY the provided PDF images. "
         "Return JSON {result:str, citations:[{page:int, quote:str}]}. "
@@ -97,7 +102,7 @@ executor = AssistantAgent(
 
 reporter = AssistantAgent(
     "reporter",
-    model_client=MODEL,
+    model_client=openai_client,
     system_message=(
         "Write a Markdown report:\n"
         "  # Objective\n  # Findings (inline footnotes ¹,²,…)\n  # Conclusion\n"
