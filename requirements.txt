@@ -5,3 +5,4 @@ autogen-agentchat
 autogen-core
 autogen-ext[openai, diskcache]
 pymupdf
+diskcache
