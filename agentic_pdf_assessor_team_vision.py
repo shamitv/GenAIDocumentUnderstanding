@@ -4,50 +4,65 @@ agentic_pdf_assessor_team_vision.py
 • Planner / Executor / Reporter / User agents in an AutoGen *Team*
 • PDF pages rendered to PNG → data-URL → sent to GPT-4o as vision messages
 """
+from __future__ import annotations
 
-import asyncio, base64, datetime as dt, io, json, pathlib, sys
+import asyncio
+import base64
+import datetime as dt
+import io
+import json
+import pathlib
+import sys
 from typing import List, Dict
 
 import fitz  # PyMuPDF
 
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from autogen_core.team import Team, Task
+from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
+# ────────────────────────────────────────────────────────────────────
+# 0 ▪ Helper: PDF → list[image_url-dict]
+# ────────────────────────────────────────────────────────────────────
+def pdf_to_image_messages(pdf_path: str, dpi: int = 220) -> List[Dict]:
+    """
+    Render each page to PNG, base-64 encode, and wrap as an OpenAI
+    vision-message image object.
+    """
+    msgs: List[Dict] = []
+    with fitz.open(pdf_path) as doc:
+        for page in doc:
+            pix = page.get_pixmap(dpi=dpi)
+            buf = io.BytesIO(pix.tobytes("png"))
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            msgs.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64}"},
+                }
+            )
+    return msgs
+
 
 # ────────────────────────────────────────────────────────────────────
-# 0 · Vision-capable model client
+# 1 ▪ Vision model client
 # ────────────────────────────────────────────────────────────────────
-model_client = OpenAIChatCompletionClient(model="gpt-4o")  # vision-enabled
+model_client = OpenAIChatCompletionClient(model="gpt-4o")  # vision + text
 
 
 # ────────────────────────────────────────────────────────────────────
-# 1 · Utilities: PDF ⇒ list[dict]  (OpenAI image objects)
-# ────────────────────────────────────────────────────────────────────
-def pdf_to_image_messages(pdf_path: str) -> List[Dict]:
-    """Return OpenAI 'image_url' message objects for every page of the PDF."""
-    imgs: List[Dict] = []
-    doc = fitz.open(pdf_path)
-    for page in doc:
-        pix = page.get_pixmap(dpi=220)                       # decent resolution
-        buf = io.BytesIO(pix.tobytes("png"))
-        b64 = base64.b64encode(buf.getvalue()).decode()
-        dataurl = f"data:image/png;base64,{b64}"
-        imgs.append({"type": "image_url", "image_url": {"url": dataurl}})
-    doc.close()
-    return imgs
-
-
-# ────────────────────────────────────────────────────────────────────
-# 2 · Agents
+# 2 ▪ Define the four agents
 # ────────────────────────────────────────────────────────────────────
 planner = AssistantAgent(
     name="planner",
     model_client=model_client,
     system_message=(
         "You output STRICT JSON only.\n"
-        "When clarification is needed, create a task for `user`.\n"
-        "When ready to finish, create a task for `reporter` then return DONE."
+        "Each task object MUST have: description, objective, instructions, "
+        "success_criteria.\n"
+        "If you need clarification, create a task with `agent` = user.\n"
+        "When everything is complete, create ONE task for `reporter` then "
+        "respond DONE."
     ),
 )
 
@@ -55,9 +70,10 @@ executor = AssistantAgent(
     name="executor",
     model_client=model_client,
     system_message=(
-        "Execute ONE task using ONLY the provided PDF page images.\n"
-        "Return STRICT JSON {result:str, citations:[{page:int, quote:str}]}.\n"
-        "Use short quotes from the visible text in images (≤200 chars)."
+        "You receive ONE task object plus PDF page images.\n"
+        "Base answers ONLY on the images; no external knowledge.\n"
+        "Return JSON {result:str, citations:[{page:int, quote:str}]}.\n"
+        "Quotes ≤200 characters."
     ),
 )
 
@@ -65,58 +81,70 @@ reporter = AssistantAgent(
     name="reporter",
     model_client=model_client,
     system_message=(
-        "Create a Markdown report with numbered footnote citations (¹,²,³…).\n"
-        "Input: objective, finished_tasks[{result, citations}].\n"
-        "Return STRICT JSON {report_markdown:str}"
+        "Write a Markdown report containing:\n"
+        "  # Objective\n  # Findings (inline footnote markers ¹,²,…)\n"
+        "  # Conclusion\n"
+        "Follow with a 'Footnotes' section listing each citation as "
+        "⟦n⟧ Page N: \"truncated quote…\".\n"
+        "Return the report *directly* (no JSON)."
     ),
 )
 
 user = UserProxyAgent(
     name="user",
-    human_input_mode="ALWAYS",
+    human_input_mode="ALWAYS",      # pauses to ask the real user
     max_consecutive_auto_reply=0,
     system_message="Answer clarification questions briefly and factually.",
 )
 
+# convenience list for team creation
+PARTICIPANTS = [planner, executor, reporter, user]
+
 
 # ────────────────────────────────────────────────────────────────────
-# 3 · Team builder
+# 3 ▪ Build a Round-Robin GroupChat as the Team
 # ────────────────────────────────────────────────────────────────────
-def build_team(img_msgs: List[Dict], objective: str) -> Team:
-    root = Task(
-        name="root",
-        agent=planner,
-        instructions=json.dumps(
-            {
-                "mode": "INIT",
-                "today": dt.date.today().isoformat(),
-                "objective": objective,
-                "note": "The PDF pages are provided below as images.",
-            }
-        ),
-        # first message(s) to the planner include the images:
-        opener_messages=img_msgs,
-        expected_output_key="final_report",
+def build_team(img_msgs: List[Dict], objective: str) -> RoundRobinGroupChat:
+    """
+    Creates a Round-Robin chat team whose *startup task* includes:
+      • JSON blob describing the overall job
+      • the image messages (one per PDF page)
+    """
+    root_json = {
+        "mode": "INIT",
+        "today": dt.date.today().isoformat(),
+        "objective": objective,
+        "note": "PDF pages follow as images.",
+    }
+    # first message = JSON instructions, followed by images
+    startup_msgs = [{"type": "text", "content": json.dumps(root_json)}, *img_msgs]
+
+    rr_chat = RoundRobinGroupChat(
+        participants=PARTICIPANTS,
+        allow_parallel=False,   # sequential turns
+        max_rounds=None,        # stop when planner says DONE
     )
-    return Team(
-        name="PDF-Vision-Assessment",
-        agents=[planner, executor, reporter, user],
-        tasks=[root],
-        allow_parallel=False,
-    )
+    rr_chat.startup_task = startup_msgs  # type: ignore
+    return rr_chat
 
 
 # ────────────────────────────────────────────────────────────────────
-# 4 · Orchestrator wrapper
+# 4 ▪ Orchestrator: run everything and return markdown report
 # ────────────────────────────────────────────────────────────────────
 async def assess_pdf(pdf_path: str, objective: str) -> str:
-    img_messages = pdf_to_image_messages(pdf_path)
-    tm = build_team(img_messages, objective)
-    await tm.run()                                     # interactive — may ask user
-    report = tm.tasks["root"].output.get("final_report")
-    if not report:
-        raise RuntimeError("No final report was produced!")
-    return report
+    images = pdf_to_image_messages(pdf_path)
+    team = build_team(images, objective)
+
+    # Run interactively; may pause for user clarification
+    await team.run()
+
+    # The final reporter message is the last one sent by 'reporter'.
+    # We grab it from the chat history.
+    for msg in reversed(team.chat_history):            # type: ignore
+        if msg["agent_name"] == "reporter":
+            return msg["content"]
+
+    raise RuntimeError("No report produced.")
 
 
 # ────────────────────────────────────────────────────────────────────
