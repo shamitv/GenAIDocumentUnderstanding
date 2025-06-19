@@ -31,6 +31,7 @@ import asyncio, base64, datetime as dt, io, json, logging, pathlib, sys
 from typing import List
 
 import fitz                                         # PyMuPDF
+from autogen_agentchat.teams._group_chat._events import GroupChatAgentResponse, GroupChatMessage
 
 from autogen_core import Image as AGImage
 from autogen_agentchat.messages import TextMessage, MultiModalMessage, BaseChatMessage
@@ -171,57 +172,54 @@ TEAM = [planner, executor, reporter, user]
 # 3 ▪ pretty‑print helper for plans
 # ────────────────────────────────────────────────────────────────
 
-def _print_plan(raw: str):
-    """Try to parse & pretty‑print a JSON array of task objects."""
+def _pretty_plan(raw: str):
     try:
         tasks = json.loads(raw)
-        if isinstance(tasks, list) and tasks and isinstance(tasks[0], dict):
-            print("\n📑  Current plan (", len(tasks), " tasks)\n" + "=" * 40)
-            for idx, t in enumerate(tasks, 1):
-                desc = t.get("description") or t.get("objective") or ""
-                print(f"{idx:>2}. {desc}")
-            print("=" * 40)
+        if isinstance(tasks, list):
+            print("\n📑 Plan (" + str(len(tasks)) + " tasks)\n" + "=" * 32)
+            for i, t in enumerate(tasks, 1):
+                print(f"{i:>2}. {t.get('description', t.get('objective', ''))}")
+            print("=" * 32)
     except Exception:
-        pass  # not a plan update
+        pass
 
 
 # ────────────────────────────────────────────────────────────────
 # 4 ▪ orchestrator (streaming, with plan logging)
 # ────────────────────────────────────────────────────────────────
-async def assess_pdf(pdf_path: str, objective: str) -> str:
-    init_msgs = pdf_to_init_messages(pdf_path, objective)
+# ──────────────────────────────────────────────────────────────
+# 3 ▪ orchestrator – stream & log plans
+# ──────────────────────────────────────────────────────────────
+async def assess_pdf(pdf: str, objective: str) -> str:
+    team = RoundRobinGroupChat(participants=TEAM)
+    reporter_md: str | None = None
+    init_msgs = pdf_to_init_messages(pdf, objective)
+    aiter = team.run_stream(task=init_msgs)
 
-    team = RoundRobinGroupChat(participants=TEAM, max_turns=None)
+    first_event = await anext(aiter)
+    print("First event:", first_event)
+    async for ev in aiter:
 
-    reporter_markdown: str | None = None
+        if isinstance(ev, GroupChatAgentResponse):
+            msg = ev.chat_message
+        elif isinstance(ev, GroupChatMessage):
+            msg = ev.message  # covers some reply paths
+        else:
+            continue
 
-    from autogen_agentchat.teams import events as _events  # local import for clarity
+        if msg.source == "planner":
+            cleaned = (
+                msg.content.strip()
+                .removeprefix("```json").removeprefix("```")
+                .removesuffix("```")
+            )
+            _pretty_plan(cleaned)
+        elif msg.source == "reporter":
+            reporter_md = msg.content
 
-    # ------------------------------------------------------------------
-    # Stream through all events; pretty‑print plans and capture final report
-    # ------------------------------------------------------------------
-    from autogen_agentchat.teams.events import GroupChatAgentResponse  # v0.6.1
-
-    async for evt in team.run_stream(task=init_msgs):
-        # AutoGen ≥0.6 emits high‑level *event* objects, not raw messages.
-        if isinstance(evt, GroupChatAgentResponse):
-            msg = evt.chat_message  # TextMessage / MultiModalMessage
-
-            if msg.source == "planner":
-                raw_json = (
-                    msg.content.strip()
-                    .removeprefix("```json").removeprefix("```")
-                    .removesuffix("```")
-                )
-                _print_plan(raw_json)
-
-            elif msg.source == "reporter":
-                reporter_markdown = msg.content
-
-    if reporter_markdown is None:
-        raise RuntimeError("Reporter did not produce a summary.")("Reporter did not produce a summary.")
-    return reporter_markdown
-
+    if reporter_md is None:
+        raise RuntimeError("Reporter did not produce a summary.")
+    return reporter_md
 
 # ────────────────────────────────────────────────────────────────
 # 4 ▪ orchestrator
