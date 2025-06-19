@@ -139,17 +139,23 @@ reporter = AssistantAgent(
     ),
 )
 
-def console_input(prompt: str):
-    """Custom stdin helper that *prints* the incoming question.
-    If the prompt is empty (AutoGen sometimes sends an empty string when no
-    actual clarification was requested) we auto‑acknowledge with an empty
-    reply so the run doesn’t hang waiting for input."""
-    prompt_clean = (prompt or "").strip()
-    if not prompt_clean:
-        # nothing to answer → return blank, lets the workflow continue
-        return ""
+# custom console prompt so the human sees the actual question
 
-    print(f"🔵  QUESTION for you ➜ {prompt_clean}")
+def console_input(prompt: str):
+    """Custom stdin helper that prints the question *only if it’s meaningful*.
+
+    AutoGen’s runtime passes a default prompt string ("Enter your response:")
+    when it merely needs *any* user message to advance the loop.  That
+    situation doesn’t require real user input, so we auto‑return an empty
+    string and let the workflow continue.
+    """
+    prompt_clean = (prompt or "").strip()
+
+    # Ignore the stock sentinel prompt that contains no real question
+    if not prompt_clean or prompt_clean.lower().startswith("enter your response"):
+        return ""  # no‑op
+
+    print(f"  QUESTION for you ➜ {prompt_clean}")
     return input("📝  Your reply: ")
 
 user = UserProxyAgent(
@@ -157,6 +163,7 @@ user = UserProxyAgent(
     description="Document owner who answers clarification questions briefly.",
     input_func=console_input,
 )
+
 
 TEAM = [planner, executor, reporter, user]
 
@@ -188,19 +195,32 @@ async def assess_pdf(pdf_path: str, objective: str) -> str:
 
     reporter_markdown: str | None = None
 
-    async for event in team.run_stream(task=init_msgs):
-        if isinstance(event, BaseChatMessage):
-            # show every plan that comes from the planner
-            if event.source == "planner":
-                _print_plan(event.content or "")
-            # capture reporter's final summary
-            if event.source == "reporter":
-                reporter_markdown = event.content
+    from autogen_agentchat.teams import events as _events  # local import for clarity
+
+    # ------------------------------------------------------------------
+    # Stream through all events; pretty‑print plans and capture final report
+    # ------------------------------------------------------------------
+    from autogen_agentchat.teams.events import GroupChatAgentResponse  # v0.6.1
+
+    async for evt in team.run_stream(task=init_msgs):
+        # AutoGen ≥0.6 emits high‑level *event* objects, not raw messages.
+        if isinstance(evt, GroupChatAgentResponse):
+            msg = evt.chat_message  # TextMessage / MultiModalMessage
+
+            if msg.source == "planner":
+                raw_json = (
+                    msg.content.strip()
+                    .removeprefix("```json").removeprefix("```")
+                    .removesuffix("```")
+                )
+                _print_plan(raw_json)
+
+            elif msg.source == "reporter":
+                reporter_markdown = msg.content
 
     if reporter_markdown is None:
-        raise RuntimeError("Reporter did not produce a summary.")
+        raise RuntimeError("Reporter did not produce a summary.")("Reporter did not produce a summary.")
     return reporter_markdown
-
 
 
 # ────────────────────────────────────────────────────────────────
