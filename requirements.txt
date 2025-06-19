@@ -3,5 +3,5 @@ Pillow
 python-dotenv
 autogen-agentchat
 autogen-core
-autogen-ext[openai]
+autogen-ext[openai, diskcache]
 pymupdf
