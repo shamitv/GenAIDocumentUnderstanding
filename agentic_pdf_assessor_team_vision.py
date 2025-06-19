@@ -36,11 +36,20 @@ load_dotenv(verbose=True)
 
 
 # ────────────────────────────────────────────────────────────────
+# 0 ▪ logger
+# ────────────────────────────────────────────────────────────────
+def log(msg: str):
+    """Log a message with a timestamp."""
+    print(f"[{dt.datetime.now().isoformat()}] {msg}")
+
+
+# ────────────────────────────────────────────────────────────────
 # 0 ▪ helper:  PDF  →  [TextMessage, *MultiModalMessage]
 # ────────────────────────────────────────────────────────────────
 def pdf_to_init_messages(pdf_path: str, objective: str,
                          dpi: int = 220) -> List:
     """Return the first JSON blob + one image message per PDF page."""
+    log(f"Reading PDF: {pdf_path}")
     # ① JSON blob describing the task
     init_blob = TextMessage(
         content=json.dumps(
@@ -57,6 +66,7 @@ def pdf_to_init_messages(pdf_path: str, objective: str,
     # ② multi-modal messages (one per page)
     image_msgs: List[MultiModalMessage] = []
     with fitz.open(pdf_path) as doc:
+        log(f"Processing {len(doc)} pages")
         for page in doc:
             png_bytes = page.get_pixmap(dpi=dpi).tobytes("png")
             data_url = f"data:image/png;base64,{base64.b64encode(png_bytes).decode()}"
@@ -65,6 +75,7 @@ def pdf_to_init_messages(pdf_path: str, objective: str,
                                   source="user")
             )
 
+    log("Finished processing PDF")
     return [init_blob, *image_msgs]
 
 
@@ -117,7 +128,7 @@ def console_input(prompt: str, *_):
     AutoGen passes the OTHER agent’s message in `prompt`.
     We print it so the user sees the question, then wait for stdin.
     """
-    print("\n🔵  QUESTION for you ➜", prompt.strip(), "\n")
+    log(f"QUESTION for you ➜ {prompt.strip()}")
     return input("📝  Your reply: ")
 
 user = UserProxyAgent(
@@ -140,6 +151,7 @@ async def assess_pdf(pdf_path: str, objective: str) -> str:
         max_turns=None,                 # planner stops via DONE
     )
 
+    log("Running team…")
     task_result = await team.run(task=task_messages)
     return task_result.messages[-1].content   # reporter's markdown
 
@@ -150,7 +162,7 @@ if __name__ == "__main__":
     pdf_file= None
 
     if len(sys.argv) < 3:
-        print("Running agentic PDF assessor with default input…")
+        log("Running agentic PDF assessor with default input…")
         pdf_file = pathlib.Path("./data/test_pdfs/sugars-factsheet.pdf").expanduser()
         objective = ("WHO’s recommended daily limit for free "
                      "sugar intake and give at least two health "
@@ -159,12 +171,13 @@ if __name__ == "__main__":
         pdf_file = pathlib.Path(sys.argv[1]).expanduser()
         objective = " ".join(sys.argv[2:])
 
+    log(f"Objective: {objective}")
 
     if not pdf_file.is_file():
-        print(f"PDF not found: {pdf_file}")
+        log(f"PDF not found: {pdf_file}")
         sys.exit(1)
 
-    print("\n=== Starting interactive assessment… ===\n")
+    log("Starting interactive assessment…")
     md_report = asyncio.run(assess_pdf(str(pdf_file), objective))
-    print("\n=== FINAL MARKDOWN REPORT ===\n")
+    log("FINAL MARKDOWN REPORT")
     print(md_report)
