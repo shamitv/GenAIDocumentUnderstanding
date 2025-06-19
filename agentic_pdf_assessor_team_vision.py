@@ -17,7 +17,7 @@ What it does
 """
 
 from __future__ import annotations
-import asyncio, base64, datetime as dt, io, json, pathlib, sys
+import asyncio, base64, datetime as dt, io, json, logging, pathlib, sys
 from typing import List
 
 import fitz                                         # PyMuPDF
@@ -38,9 +38,15 @@ load_dotenv(verbose=True)
 # ────────────────────────────────────────────────────────────────
 # 0 ▪ logger
 # ────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S.%f",
+)
+
 def log(msg: str):
     """Log a message with a timestamp."""
-    print(f"[{dt.datetime.now().isoformat()}] {msg}")
+    logging.info(msg)
 
 
 # ────────────────────────────────────────────────────────────────
