@@ -140,15 +140,17 @@ reporter = AssistantAgent(
 )
 
 def console_input(prompt: str):
-    shown = prompt.strip() or "<no prompt text provided>"
-    print(f"\n🔵  QUESTION for you ➜ {shown}\n")
-    return input("📝  Your reply: ")
+    """Custom stdin helper that *prints* the incoming question.
+    If the prompt is empty (AutoGen sometimes sends an empty string when no
+    actual clarification was requested) we auto‑acknowledge with an empty
+    reply so the run doesn’t hang waiting for input."""
+    prompt_clean = (prompt or "").strip()
+    if not prompt_clean:
+        # nothing to answer → return blank, lets the workflow continue
+        return ""
 
-user = UserProxyAgent(
-    "user",
-    description="Document owner who answers clarification questions briefly.",
-    input_func=console_input,
-)
+    print(f"🔵  QUESTION for you ➜ {prompt_clean}")
+    return input("📝  Your reply: ")
 
 user = UserProxyAgent(
     "user",
