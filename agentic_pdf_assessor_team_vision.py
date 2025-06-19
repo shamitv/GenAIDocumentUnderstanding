@@ -12,7 +12,7 @@ Usage:
 
 from __future__ import annotations
 import asyncio, base64, datetime as dt, io, json, pathlib, sys
-from typing import List, Dict
+from typing import List, Dict, Any
 
 import fitz                                          # PyMuPDF
 
@@ -92,7 +92,7 @@ PARTICIPANTS = [planner, executor, reporter, user]
 # ────────────────────────────────────────────────────────────────────
 # 3 ▪ Build Round-Robin team
 # ────────────────────────────────────────────────────────────────────
-def build_team(img_msgs: List[Dict], objective: str) -> RoundRobinGroupChat:
+def build_team(img_msgs: List[Dict], objective: str) -> tuple[RoundRobinGroupChat, list[dict[str, str] | Any]]:
     root_blob = {
         "mode": "INIT",
         "today": dt.date.today().isoformat(),
@@ -103,11 +103,10 @@ def build_team(img_msgs: List[Dict], objective: str) -> RoundRobinGroupChat:
 
     team = RoundRobinGroupChat(
         participants=PARTICIPANTS,
-        allow_parallel=False,     # sequential turns
-        max_rounds=None,          # planner decides when to stop
+        max_turns=None,          # planner decides when to stop
     )
     team.startup_task = startup          # type: ignore
-    return team
+    return team, startup
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -115,8 +114,8 @@ def build_team(img_msgs: List[Dict], objective: str) -> RoundRobinGroupChat:
 # ────────────────────────────────────────────────────────────────────
 async def assess_pdf(pdf_path: str, objective: str) -> str:
     images = pdf_to_image_msgs(pdf_path)
-    team = build_team(images, objective)
-    await team.run()                      # interactive (may ask the user)
+    team, startup = build_team(images, objective)
+    await team.run(task=startup)                      # interactive (may ask the user)
 
     # Reporter’s last message = final markdown
     for msg in reversed(team.messages):
@@ -133,7 +132,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 3:
         print("Running agentic PDF assessor with default input…")
-        pdf_file = pathlib.Path("data/test_pdfs/sample.pdf").expanduser()
+        pdf_file = pathlib.Path("./data/test_pdfs/sugars-factsheet.pdf").expanduser()
         objective = ("WHO’s recommended daily limit for free "
                      "sugar intake and give at least two health "
                      "risks of excessive sugar consumption?")
